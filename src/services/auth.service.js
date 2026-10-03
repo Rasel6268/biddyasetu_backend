@@ -71,6 +71,7 @@ const registerService = async (data) => {
     fullName,
     email,
     phone,
+    profileImage,
     gender,
     dateOfBirth,
     bloodGroup,
@@ -161,6 +162,7 @@ const registerService = async (data) => {
     name: resolvedName,
     email: cleanEmail,
     phone: cleanPhone, // ← local number only
+    profileImage: profileImage || null,
     role: initialRole,
     gender: gender ? gender.toLowerCase() : "male",
     dateOfBirth: dateOfBirth || "",
