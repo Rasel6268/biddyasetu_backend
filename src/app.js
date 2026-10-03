@@ -57,6 +57,10 @@ app.get("/api/health", (req, res) => {
 
 // API Routes
 app.use("/api/auth", require("./routes/auth.route"));
+app.use("/api/members", require("./routes/member.route"));
+app.use("/api/users", require("./routes/member.route"));
+app.use("/api/events", require("./routes/event.route"));
+app.use("/api/announcements", require("./routes/announcement.route"));
 app.use("/api/ssl", require("./routes/payment.route"));
 app.use("/api/payment", require("./routes/payment.route"));
 
