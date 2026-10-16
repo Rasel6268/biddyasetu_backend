@@ -197,8 +197,36 @@ const userSchema = new mongoose.Schema(
 userSchema.pre("save", async function () {
   if (!this.membershipId) {
     const year = new Date().getFullYear();
-    const count = await mongoose.model("User").countDocuments();
-    this.membershipId = `BDS-${year}-${String(count + 1).padStart(4, "0")}`;
+    const prefix = `BDS-${year}-`;
+
+    // Find the latest user with a membershipId matching this year's prefix
+    const latestUser = await mongoose
+      .model("User")
+      .findOne({ membershipId: new RegExp(`^${prefix}`) })
+      .sort({ membershipId: -1 })
+      .collation({ locale: "en", numericOrdering: true })
+      .select("membershipId")
+      .lean();
+
+    let nextNum = 1;
+    if (latestUser && latestUser.membershipId) {
+      const parts = latestUser.membershipId.split("-");
+      const lastNum = parseInt(parts[parts.length - 1], 10);
+      if (!isNaN(lastNum)) {
+        nextNum = lastNum + 1;
+      }
+    }
+
+    // Safety loop: ensure candidateId is truly unique in case of gaps or collisions
+    while (true) {
+      const candidateId = `${prefix}${String(nextNum).padStart(4, "0")}`;
+      const exists = await mongoose.model("User").exists({ membershipId: candidateId });
+      if (!exists) {
+        this.membershipId = candidateId;
+        break;
+      }
+      nextNum++;
+    }
   }
 });
 

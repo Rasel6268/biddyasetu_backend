@@ -193,7 +193,26 @@ const registerService = async (data) => {
     membershipStartDate: new Date(),
   });
 
-  await newUser.save();
+  // Save user with retry in case of a race condition on membershipId
+  let saved = false;
+  let attempts = 0;
+  while (!saved && attempts < 3) {
+    try {
+      attempts++;
+      await newUser.save();
+      saved = true;
+    } catch (saveErr) {
+      if (
+        saveErr.code === 11000 &&
+        (saveErr.keyPattern?.membershipId || saveErr.message?.includes("membershipId")) &&
+        attempts < 3
+      ) {
+        newUser.membershipId = undefined;
+        continue;
+      }
+      throw saveErr;
+    }
+  }
 
   const token = generateToken(newUser);
 
