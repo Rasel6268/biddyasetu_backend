@@ -57,6 +57,36 @@ const userSchema = new mongoose.Schema(
       type: String,
       default: "",
     },
+    fatherName: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    motherName: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    spouseName: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    nidNumber: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    maritalStatus: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    religion: {
+      type: String,
+      trim: true,
+      default: "",
+    },
 
     // Current Address (US/International or Local)
     currentAddress: {

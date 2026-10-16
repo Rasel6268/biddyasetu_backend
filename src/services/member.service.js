@@ -38,6 +38,8 @@ class MemberService {
         { organization: searchRegex },
         { batch: searchRegex },
         { membershipId: searchRegex },
+        { fatherName: searchRegex },
+        { nidNumber: searchRegex },
         { "currentAddress.city": searchRegex },
         { "currentAddress.country": searchRegex },
       ];
@@ -119,6 +121,8 @@ class MemberService {
         { profession: s },
         { organization: s },
         { batch: s },
+        { fatherName: s },
+        { nidNumber: s },
       ];
     }
 
