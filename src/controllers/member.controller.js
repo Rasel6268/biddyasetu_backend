@@ -203,13 +203,50 @@ const exportMembersCSV = async (req, res, next) => {
   }
 };
 
+/**
+ * Get Dynamic Admin Dashboard Overview Stats & Queues
+ */
+const getDashboardOverview = async (req, res, next) => {
+  try {
+    const data = await memberService.getDashboardOverview();
+    res.status(200).json({
+      success: true,
+      data,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Admin direct member creation
+ */
+const createMemberByAdmin = async (req, res, next) => {
+  try {
+    const member = await memberService.createMemberByAdmin(req.body);
+    res.status(201).json({
+      success: true,
+      message: `Member ${member.name} onboarded successfully!`,
+      data: member,
+    });
+  } catch (error) {
+    res.status(400).json({
+      success: false,
+      message: error.message || "Failed to onboard member.",
+    });
+  }
+};
+
 module.exports = {
   getPublicMembers,
   getAdminMembers,
   getMemberById,
   getMemberStats,
+  getDashboardOverview,
+  createMemberByAdmin,
   updateMemberStatus,
   updateMember,
   deleteMember,
   exportMembersCSV,
 };
+

@@ -160,6 +160,29 @@ const getAllPayments = async (req, res) => {
   }
 };
 
+/**
+ * Admin Verify / Reconcile Payment
+ * PUT /api/ssl/:id/verify
+ */
+const verifyPayment = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { verifyPaymentByAdminService } = require("../services/payment.service");
+    const payment = await verifyPaymentByAdminService(id);
+
+    return res.status(200).json({
+      success: true,
+      message: "Payment transaction verified and reconciled successfully.",
+      data: payment,
+    });
+  } catch (error) {
+    return res.status(400).json({
+      success: false,
+      message: error.message || "Failed to verify transaction.",
+    });
+  }
+};
+
 module.exports = {
   initiateSSLPayment,
   sslSuccess,
@@ -169,4 +192,5 @@ module.exports = {
   getPaymentStatus,
   getMyPayments,
   getAllPayments,
+  verifyPayment,
 };

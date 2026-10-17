@@ -1,5 +1,9 @@
 const mongoose = require("mongoose");
 const User = require("../models/Users.model");
+const Payment = require("../models/Payment.model");
+const Event = require("../models/Event.model");
+const Announcement = require("../models/Announcement.model");
+const Gallery = require("../models/Gallery.model");
 
 class MemberService {
   /**
@@ -235,6 +239,154 @@ class MemberService {
    */
   async deleteMember(id) {
     return await User.findByIdAndDelete(id);
+  }
+
+  /**
+   * Dynamic Admin Dashboard Statistics, Pending Queue & Recent Transactions
+   */
+  async getDashboardOverview() {
+    const startOfMonth = new Date();
+    startOfMonth.setDate(1);
+    startOfMonth.setHours(0, 0, 0, 0);
+
+    const [
+      totalAlumni,
+      registrationsThisMonth,
+      pendingApprovalsCount,
+      activeMembersCount,
+      totalEventsCount,
+      totalActivitiesCount,
+      totalAnnouncementsCount,
+      totalRevenueAgg,
+      monthRevenueAgg,
+      urgentPendingMembers,
+      recentPayments,
+    ] = await Promise.all([
+      User.countDocuments(),
+      User.countDocuments({ createdAt: { $gte: startOfMonth } }),
+      User.countDocuments({ membershipStatus: "pending" }),
+      User.countDocuments({ membershipStatus: "active" }),
+      Event.countDocuments(),
+      Gallery.countDocuments(),
+      Announcement.countDocuments(),
+      Payment.aggregate([
+        { $match: { status: "paid" } },
+        { $group: { _id: null, total: { $sum: "$amount" } } },
+      ]),
+      Payment.aggregate([
+        {
+          $match: {
+            status: "paid",
+            $or: [
+              { paidAt: { $gte: startOfMonth } },
+              { createdAt: { $gte: startOfMonth } },
+            ],
+          },
+        },
+        { $group: { _id: null, total: { $sum: "$amount" } } },
+      ]),
+      User.find({ membershipStatus: "pending" })
+        .select("name batch phone email profession membership createdAt membershipId")
+        .sort({ createdAt: -1 })
+        .limit(6)
+        .lean(),
+      Payment.find()
+        .populate("user", "name email phone batch membershipId")
+        .sort({ createdAt: -1 })
+        .limit(6)
+        .lean(),
+    ]);
+
+    const totalRevenue = totalRevenueAgg[0]?.total || 0;
+    const revenueThisMonth = monthRevenueAgg[0]?.total || 0;
+
+    return {
+      kpi: {
+        totalAlumni,
+        registrationsThisMonth,
+        pendingApprovals: pendingApprovalsCount,
+        activeMembers: activeMembersCount,
+        totalRevenue,
+        revenueThisMonth,
+        totalEvents: totalEventsCount,
+        totalActivities: totalActivitiesCount,
+        totalAnnouncements: totalAnnouncementsCount,
+      },
+      urgentPendingMembers: urgentPendingMembers.map((m) => ({
+        id: m._id,
+        membershipId: m.membershipId || "Pending",
+        name: m.name,
+        batch: m.batch || "Alumni",
+        phone: m.phone,
+        email: m.email,
+        profession: m.profession || "General Member",
+        joinedDate: m.createdAt,
+      })),
+      recentPayments: recentPayments.map((p) => ({
+        id: p.transactionId,
+        _id: p._id,
+        member: p.user?.name || "Member",
+        memberId: p.membershipId || p.user?.membershipId || "N/A",
+        batch: p.user?.batch || "Alumni",
+        type: `${p.packageName || "Membership"} Fee`,
+        amount: p.amount,
+        gateway: p.cardType || p.paymentGateway || "SSLCommerz",
+        trxId: p.bankTransactionId || p.valId || p.transactionId,
+        date: p.paidAt || p.createdAt,
+        status:
+          p.status === "paid"
+            ? "Verified"
+            : p.status === "pending"
+            ? "Pending Verification"
+            : "Failed",
+        rawStatus: p.status,
+      })),
+    };
+  }
+
+  /**
+   * Onboard new member directly by Admin
+   */
+  async createMemberByAdmin(data) {
+    const { name, batch, phone, email, profession, tier = "General Member" } = data;
+    if (!name || !phone) {
+      throw new Error("Name and phone number are required.");
+    }
+
+    const cleanPhone = String(phone).trim();
+    const existing = await User.findOne({ phone: cleanPhone });
+    if (existing) {
+      throw new Error(`A member with phone ${cleanPhone} is already registered.`);
+    }
+
+    const membershipType = tier.toLowerCase().includes("life")
+      ? "life_member"
+      : tier.toLowerCase().includes("donor") || tier.toLowerCase().includes("patron")
+      ? "donor_member"
+      : "general_member";
+
+    const count = await User.countDocuments();
+    const prefix = membershipType === "life_member" ? "BDS-LM" : "BDS-GM";
+    const membershipId = `${prefix}-${String(count + 1).padStart(4, "0")}`;
+
+    const newUser = new User({
+      name: name.trim(),
+      phone: cleanPhone,
+      email: email?.trim() || undefined,
+      batch: batch?.trim() || "",
+      profession: profession?.trim() || "",
+      membership: membershipType,
+      membershipStatus: "active",
+      paymentStatus: "paid",
+      membershipId,
+      packageData: {
+        packageName: tier,
+        fee: membershipType === "life_member" ? 20000 : 1000,
+        billingCycle: membershipType === "life_member" ? "lifetime" : "yearly",
+      },
+    });
+
+    return await newUser.save();
   }
 }
 

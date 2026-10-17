@@ -1,4 +1,5 @@
 const User = require("../models/Users.model");
+const MembershipPackage = require("../models/MembershipPackage.model");
 const { generateToken } = require("../utility/jwt.util");
 const AppError = require("../utility/appError");
 
@@ -157,11 +158,45 @@ const registerService = async (data) => {
     normalizedMembership = "patron_member";
     resolvedDuration = "lifetime";
     resolvedPackageData = {
-      packageName: "Patron Member",
-      fee: 20000,
+      packageName: "Patron / Donor Member",
+      fee: 50000,
       currency: "BDT",
       billingCycle: "lifetime",
     };
+  }
+
+  // Dynamically look up active package configuration set by admin
+  try {
+    const candidateName = (selectedTier || membershipTier || membership || "").trim();
+    let matchedPkg = null;
+    if (candidateName) {
+      const escaped = candidateName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      matchedPkg = await MembershipPackage.findOne({
+        name: { $regex: new RegExp(`^${escaped}$`, "i") },
+        isActive: true,
+      });
+    }
+
+    if (!matchedPkg) {
+      if (rawTier.includes("life")) {
+        matchedPkg = await MembershipPackage.findOne({ name: /life/i, isActive: true });
+      } else if (rawTier.includes("patron") || rawTier.includes("donor") || rawTier.includes("doner")) {
+        matchedPkg = await MembershipPackage.findOne({ name: /patron|donor/i, isActive: true });
+      } else {
+        matchedPkg = await MembershipPackage.findOne({ name: /general/i, isActive: true });
+      }
+    }
+
+    if (matchedPkg) {
+      resolvedPackageData = {
+        packageName: matchedPkg.name,
+        fee: Number(matchedPkg.fee),
+        currency: matchedPkg.currency || "BDT",
+        billingCycle: matchedPkg.cycle ? matchedPkg.cycle.toLowerCase() : resolvedDuration,
+      };
+    }
+  } catch (pkgErr) {
+    console.warn("[AuthService] Could not resolve dynamic package from DB:", pkgErr.message);
   }
 
   // Build user object (No password, phone stored WITHOUT country code)

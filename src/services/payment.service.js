@@ -1,6 +1,7 @@
 const axios = require("axios");
 const User = require("../models/Users.model");
 const Payment = require("../models/Payment.model");
+const MembershipPackage = require("../models/MembershipPackage.model");
 
 const isSandbox = process.env.SSLCZ_SANDBOX !== "false";
 const sslSessionUrl = isSandbox
@@ -47,22 +48,73 @@ const initiateService = async (paymentData, authenticatedUserId = null) => {
     }
 
     // =====================================
-    // 2. Determine Package & Fee
+    // 2. Determine Package & Fee Dynamically
     // =====================================
-    const selectedPackageName =
-      packageName || paymentInfo.packageData?.packageName || "General Member";
+    const targetPackageName = (
+      packageName ||
+      paymentInfo.packageData?.packageName ||
+      paymentInfo.membership ||
+      "General Member"
+    ).trim();
+
+    // Query active packages from database configured dynamically by admin
+    let dynamicPackage = null;
+    if (targetPackageName) {
+      const escaped = targetPackageName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      dynamicPackage = await MembershipPackage.findOne({
+        name: { $regex: new RegExp(`^${escaped}$`, "i") },
+        isActive: true,
+      });
+
+      // Try keyword matching if exact name didn't match
+      if (!dynamicPackage) {
+        const lower = targetPackageName.toLowerCase();
+        if (lower.includes("life")) {
+          dynamicPackage = await MembershipPackage.findOne({ name: /life/i, isActive: true });
+        } else if (lower.includes("patron") || lower.includes("donor") || lower.includes("doner")) {
+          dynamicPackage = await MembershipPackage.findOne({ name: /patron|donor/i, isActive: true });
+        } else if (lower.includes("general")) {
+          dynamicPackage = await MembershipPackage.findOne({ name: /general/i, isActive: true });
+        }
+      }
+    }
+
+    // Fallback to active General package or first active package
+    if (!dynamicPackage) {
+      dynamicPackage =
+        (await MembershipPackage.findOne({ name: /general/i, isActive: true })) ||
+        (await MembershipPackage.findOne({ isActive: true }).sort({ order: 1 }));
+    }
+
+    const selectedPackageName = dynamicPackage?.name || targetPackageName || "General Member";
+    const dynamicPackageFee =
+      dynamicPackage?.fee !== undefined
+        ? Number(dynamicPackage.fee)
+        : Number(paymentInfo.packageData?.fee) || 1000;
 
     let finalAmount = Number(amount);
-    if (!finalAmount || finalAmount <= 0) {
-      finalAmount = Number(paymentInfo.packageData?.fee) || 1000;
+    // If amount is not passed or less than required package fee, use dynamic fee configured by admin
+    if (!finalAmount || finalAmount <= 0 || (dynamicPackage && finalAmount < dynamicPackageFee)) {
+      finalAmount = dynamicPackageFee;
     }
 
     const selectedBilling =
+      dynamicPackage?.cycle?.toLowerCase() ||
       billingCycle ||
       paymentInfo.packageData?.billingCycle ||
       (paymentInfo.membershipDuration === "lifetime" ? "lifetime" : "yearly");
 
-    const currency = paymentInfo.packageData?.currency || "BDT";
+    const currency = dynamicPackage?.currency || paymentInfo.packageData?.currency || "BDT";
+
+    // Sync user's packageData with latest dynamic details
+    if (!paymentInfo.packageData) {
+      paymentInfo.packageData = {};
+    }
+    paymentInfo.packageData.fee = finalAmount;
+    paymentInfo.packageData.packageName = selectedPackageName;
+    paymentInfo.packageData.currency = currency;
+    paymentInfo.packageData.billingCycle = selectedBilling;
+    await paymentInfo.save().catch((err) => console.warn("[SSL] User packageData sync warning:", err.message));
 
     // =====================================
     // 3. Generate Unique Transaction ID
@@ -379,6 +431,12 @@ const handleIpnService = async (body) => {
         user.paymentStatus = "paid";
         user.membershipStatus = "active";
         user.membershipStartDate = new Date();
+        if (!user.packageData) {
+          user.packageData = {};
+        }
+        user.packageData.fee = payment.amount;
+        user.packageData.packageName = payment.packageName;
+        user.packageData.billingCycle = payment.billingCycle;
         await user.save();
       }
 
@@ -493,6 +551,35 @@ const getAllPaymentsService = async (queryParams = {}) => {
   };
 };
 
+/**
+ * Admin verify / reconcile transaction manually
+ */
+const verifyPaymentByAdminService = async (transactionIdOrId) => {
+  const query = mongoose.Types.ObjectId.isValid(transactionIdOrId)
+    ? { _id: transactionIdOrId }
+    : { transactionId: transactionIdOrId };
+
+  const payment = await Payment.findOne(query);
+  if (!payment) {
+    throw new Error("Payment record not found.");
+  }
+
+  payment.status = "paid";
+  payment.paidAt = new Date();
+  await payment.save();
+
+  if (payment.user) {
+    const user = await User.findById(payment.user);
+    if (user) {
+      user.paymentStatus = "paid";
+      user.membershipStatus = "active";
+      await user.save();
+    }
+  }
+
+  return payment;
+};
+
 module.exports = {
   initiateService,
   handleSuccessService,
@@ -502,4 +589,5 @@ module.exports = {
   getPaymentStatusService,
   getUserPaymentsService,
   getAllPaymentsService,
+  verifyPaymentByAdminService,
 };

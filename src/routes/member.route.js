@@ -5,6 +5,8 @@ const {
   getAdminMembers,
   getMemberById,
   getMemberStats,
+  getDashboardOverview,
+  createMemberByAdmin,
   updateMemberStatus,
   updateMember,
   deleteMember,
@@ -13,12 +15,25 @@ const {
 const { authMiddleware } = require("../middlewares/auth.middleware");
 const { authorizeRoles } = require("../middlewares/role.middleware");
 
-// ─── Public Routes ───
+// ─── Specific Routes (Must be before /:id) ───
 router.get("/", getPublicMembers);
 router.get("/stats", getMemberStats);
-router.get("/:id", getMemberById);
 
 // ─── Admin Routes ───
+router.get(
+  "/admin/dashboard-stats",
+  authMiddleware,
+  authorizeRoles("admin", "superadmin"),
+  getDashboardOverview
+);
+
+router.post(
+  "/admin/create",
+  authMiddleware,
+  authorizeRoles("admin", "superadmin"),
+  createMemberByAdmin
+);
+
 router.get(
   "/admin/all",
   authMiddleware,
@@ -32,6 +47,9 @@ router.get(
   authorizeRoles("admin", "superadmin"),
   exportMembersCSV
 );
+
+// ─── Parameterized Routes ───
+router.get("/:id", getMemberById);
 
 router.put(
   "/:id/status",

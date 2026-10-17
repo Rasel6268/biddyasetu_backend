@@ -1,4 +1,5 @@
 const MembershipPackage = require("../models/MembershipPackage.model");
+const User = require("../models/Users.model");
 const AppError = require("../utility/appError");
 
 const defaultPackagesSeed = [
@@ -205,6 +206,70 @@ class MembershipPackageService {
     }
 
     await pkg.save();
+
+    // Automatically synchronize members assigned to this package with the updated dynamic fee
+    if (fee !== undefined && pkg.name) {
+      try {
+        const pkgName = pkg.name.trim();
+        const escaped = pkgName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        const isYearlyOrGeneral =
+          (pkg.cycle || "").toLowerCase() === "annual" ||
+          (pkg.cycle || "").toLowerCase() === "yearly" ||
+          /general/i.test(pkgName);
+
+        let targetCondition;
+
+        if (isYearlyOrGeneral) {
+          // Updates all general members / yearly membership members (including previous yearly payers for upcoming dues/renewal)
+          // Lifetime, Donor, and Patron members are explicitly excluded ("other will same")
+          targetCondition = {
+            $and: [
+              {
+                $or: [
+                  { "packageData.packageName": pkgName },
+                  { "packageData.packageName": { $regex: new RegExp(`^${escaped}$`, "i") } },
+                  { "packageData.packageName": { $regex: /general/i } },
+                  { membership: "general_member" },
+                  { membership: { $regex: /general/i } },
+                  { membershipDuration: "yearly" },
+                ],
+              },
+              {
+                // Exclude lifetime / donor / patron members so their status and packages remain untouched
+                membershipDuration: { $ne: "lifetime" },
+                membership: { $not: { $regex: /life|patron|donor|doner/i } },
+                "packageData.packageName": { $not: { $regex: /life|patron|donor|doner/i } },
+              },
+            ],
+          };
+        } else {
+          // For Life Member, Patron / Donor, or other specific packages:
+          // Only update users who are explicitly enrolled in this specific package
+          targetCondition = {
+            $or: [
+              { "packageData.packageName": pkgName },
+              { "packageData.packageName": { $regex: new RegExp(`^${escaped}$`, "i") } },
+            ],
+          };
+        }
+
+        const updateResult = await User.updateMany(
+          targetCondition,
+          {
+            $set: {
+              "packageData.fee": Number(pkg.fee),
+              "packageData.packageName": pkg.name,
+              "packageData.currency": pkg.currency || "BDT",
+              "packageData.billingCycle": pkg.cycle ? pkg.cycle.toLowerCase() : (isYearlyOrGeneral ? "yearly" : "lifetime"),
+            },
+          }
+        );
+        console.log(`[MembershipPackageService] Updated dynamic fee to ৳${pkg.fee} for ${updateResult.modifiedCount} members (${pkgName}).`);
+      } catch (syncErr) {
+        console.warn("[MembershipPackageService] Failed to sync members fee:", syncErr.message);
+      }
+    }
+
     return pkg;
   }
 

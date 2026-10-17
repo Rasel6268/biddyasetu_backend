@@ -62,8 +62,10 @@ app.use("/api/users", require("./routes/member.route"));
 app.use("/api/events", require("./routes/event.route"));
 app.use("/api/announcements", require("./routes/announcement.route"));
 app.use("/api/membership-packages", require("./routes/membershipPackage.route"));
+app.use("/api/gallery", require("./routes/gallery.route"));
 app.use("/api/ssl", require("./routes/payment.route"));
 app.use("/api/payment", require("./routes/payment.route"));
+app.use("/api/financial-reports", require("./routes/financialReport.route"));
 
 // 404 Handler
 app.use((req, res) => {

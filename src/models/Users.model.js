@@ -235,31 +235,29 @@ userSchema.pre("save", async function () {
 userSchema.pre("save", function () {
   const normMembership = (this.membership || "").toLowerCase();
 
-  // Normalize duration based on tier
+  if (!this.packageData) {
+    this.packageData = {};
+  }
+
+  // Normalize duration based on tier, while preserving dynamic package fees
   if (normMembership.includes("life")) {
     this.membershipDuration = "lifetime";
-    this.packageData = {
-      packageName: "Life Member",
-      fee: 20000,
-      currency: "BDT",
-      billingCycle: "lifetime",
-    };
+    this.packageData.packageName = this.packageData.packageName || "Life Member";
+    this.packageData.fee = this.packageData.fee !== undefined ? this.packageData.fee : 50000;
+    this.packageData.currency = this.packageData.currency || "BDT";
+    this.packageData.billingCycle = this.packageData.billingCycle || "lifetime";
   } else if (normMembership.includes("donor") || normMembership.includes("doner") || normMembership.includes("patron")) {
     this.membershipDuration = "lifetime";
-    this.packageData = {
-      packageName: "Patron / Donor Member",
-      fee: 20000,
-      currency: "BDT",
-      billingCycle: "lifetime",
-    };
+    this.packageData.packageName = this.packageData.packageName || "Patron / Donor Member";
+    this.packageData.fee = this.packageData.fee !== undefined ? this.packageData.fee : 60000;
+    this.packageData.currency = this.packageData.currency || "BDT";
+    this.packageData.billingCycle = this.packageData.billingCycle || "lifetime";
   } else {
     this.membershipDuration = "yearly";
-    this.packageData = {
-      packageName: "General Member",
-      fee: 1000,
-      currency: "BDT",
-      billingCycle: "yearly",
-    };
+    this.packageData.packageName = this.packageData.packageName || "General Member";
+    this.packageData.fee = this.packageData.fee !== undefined ? this.packageData.fee : 1100;
+    this.packageData.currency = this.packageData.currency || "BDT";
+    this.packageData.billingCycle = this.packageData.billingCycle || "yearly";
   }
 
   // Ensure a start date exists

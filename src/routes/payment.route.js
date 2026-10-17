@@ -9,6 +9,7 @@ const {
   getPaymentStatus,
   getMyPayments,
   getAllPayments,
+  verifyPayment,
 } = require("../controllers/payment.controller");
 const { authMiddleware } = require("../middlewares/auth.middleware");
 const { authorizeRoles } = require("../middlewares/role.middleware");
@@ -47,6 +48,9 @@ router.get("/my-payments", (req, res, next) => {
 // =====================================
 
 // Get all payment records with filters & summary statistics
-router.get("/all", authMiddleware, authorizeRoles("admin"), getAllPayments);
+router.get("/all", authMiddleware, authorizeRoles("admin", "superadmin"), getAllPayments);
+
+// Manually verify / reconcile transaction
+router.put("/:id/verify", authMiddleware, authorizeRoles("admin", "superadmin"), verifyPayment);
 
 module.exports = router;
